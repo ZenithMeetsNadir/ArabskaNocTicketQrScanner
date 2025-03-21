@@ -64,8 +64,10 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.5.0-alpha02")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
     implementation("androidx.camera:camera-camera2:1.5.0-alpha02")
-    //implementation("com.google.zxing:core:3.5.2")
 
     // qr code
     implementation("com.google.mlkit:barcode-scanning:17.0.3")
+
+    // jsom
+    implementation("com.google.code.gson:gson:2.8.9")
 }

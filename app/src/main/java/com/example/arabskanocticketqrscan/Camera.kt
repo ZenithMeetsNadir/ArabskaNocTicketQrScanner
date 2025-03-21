@@ -10,6 +10,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.core.app.ComponentActivity
 import androidx.core.content.ContextCompat
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -56,12 +57,8 @@ class Camera(
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
-            try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(activity, cameraSelector, preview, imageAnalysis)
-            } catch (exc: Exception) {
-                Log.e("CameraX", "Use case binding failed", exc)
-            }
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(activity, cameraSelector, preview, imageAnalysis)
 
         }, ContextCompat.getMainExecutor(activity))
     }

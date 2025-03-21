@@ -11,6 +11,8 @@ import com.google.mlkit.vision.common.InputImage
 
 class BarcodeAnalyzer(private val onBarcodeDetected: (String) -> Unit) : ImageAnalysis.Analyzer {
 
+    private var qrCache: String = ""
+
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(image: ImageProxy) {
         val mediaImage = image.image
@@ -27,7 +29,10 @@ class BarcodeAnalyzer(private val onBarcodeDetected: (String) -> Unit) : ImageAn
                 .addOnSuccessListener { barcodes ->
                     for (barcode in barcodes) {
                         barcode.rawValue?.let { value ->
-                            onBarcodeDetected(value)
+                            if (value != qrCache) {
+                                qrCache = value
+                                onBarcodeDetected(value)
+                            }
                         }
                     }
                 }
