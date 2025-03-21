@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var attendants: TicketModel.Attendants
 
     private fun translateImedAttendants() {
-        val imedAttendantsJson = LocalStorage.retrieveAssetContent(this, IMED_ATTENDANTS_JSON)
+        val imedAttendantsJson = LocalStorage.retrieveFileContent(this, IMED_ATTENDANTS_JSON)
         val imedAttendants = ImedAttendantsBridge.parseFrom(imedAttendantsJson)
         attendants = ImedAttendantsBridge.evolve(imedAttendants)
 
@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun retrieveAttendants() {
+        LocalStorage.copyToInternalStorage(this, IMED_ATTENDANTS_JSON, IMED_ATTENDANTS_JSON)
         val attendantsJsonFile = File(this.filesDir, ATTENDANTS_JSON)
 
         if (!attendantsJsonFile.exists())
