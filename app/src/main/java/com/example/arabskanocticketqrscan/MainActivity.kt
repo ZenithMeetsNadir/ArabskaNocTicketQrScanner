@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
         LocalStorage.copyToInternalStorage(this, IMED_ATTENDANTS_JSON, IMED_ATTENDANTS_JSON)
         val attendantsJsonFile = File(this.filesDir, ATTENDANTS_JSON)
 
+        if (attendantsJsonFile.exists() && attendantsJsonFile.length() == 0L)
+            attendantsJsonFile.delete()
+
         if (!attendantsJsonFile.exists())
             translateImedAttendants()
         else {
