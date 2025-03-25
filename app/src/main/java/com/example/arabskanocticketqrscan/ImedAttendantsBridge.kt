@@ -11,7 +11,8 @@ class ImedAttendantsBridge {
     data class TicketHolder(
         val address: String,
         val hashes: List<String>,
-        val transaction_hash: String
+        val transaction_hash: String,
+        val deleted: Boolean
     )
 
     companion object : IFromJson<AttendantsRaw> {
@@ -21,8 +22,10 @@ class ImedAttendantsBridge {
             val attendants = ArrayList<TicketModel.Attendant>()
 
             for (ticketHolder in raw.data) {
-                for (ticket in ticketHolder.hashes)
-                    attendants.add(TicketModel.Attendant(ticketHolder.address, ticket))
+                if (!ticketHolder.deleted) {
+                    for (ticket in ticketHolder.hashes)
+                        attendants.add(TicketModel.Attendant(ticketHolder.address, ticket))
+                }
             }
 
             return TicketModel.Attendants(attendants)

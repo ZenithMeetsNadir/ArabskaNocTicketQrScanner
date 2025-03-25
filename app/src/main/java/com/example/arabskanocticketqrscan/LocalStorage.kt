@@ -10,12 +10,11 @@ class LocalStorage {
     companion object {
         fun copyToInternalStorage(context: Context, fileName: String, destinationFileName: String) {
             val outputFile = File(context.filesDir, destinationFileName)
+            val inputStream = context.assets.open(fileName)
 
-            if (!outputFile.exists()) {
-                context.assets.open(fileName).use { inputStream ->
-                    FileOutputStream(outputFile).use { outputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
+            if (!outputFile.exists() || outputFile.readText() != inputStream.reader().readText()) {
+                FileOutputStream(outputFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
                 }
             }
         }
