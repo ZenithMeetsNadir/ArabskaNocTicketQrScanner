@@ -43,7 +43,7 @@ class TicketModel {
         }
 
         fun getEmail(ticketHash: String): String {
-            return attendants.find { attendant -> attendant.ticket == ticketHash }?.ticket ?: ""
+            return attendants.find { attendant -> attendant.ticket == ticketHash }?.email ?: ""
         }
     }
 

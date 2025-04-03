@@ -21,6 +21,12 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var attendantsRepo: AttendantsRepo
 
+    private val dropdownEnabled: Boolean get() {
+        binding.apply {
+            return attendantsRepo.attendants!!.getByEmail(etEmail.text.toString()).size > 1 || thvQrValue.dropdownEnabled
+        }
+    }
+
     private fun updateSelection() {
         binding.apply {
             val tickets = attendantsRepo.attendants!!.getByEmail(etEmail.text.toString())
@@ -38,7 +44,7 @@ class MainActivity : ComponentActivity() {
 
     private fun flipSelectionVisibility() {
         binding.rvManualHashSelection.apply {
-            if (isInvisible) {
+            if (isInvisible && dropdownEnabled) {
                 updateSelection()
                 visibility = View.VISIBLE
             } else if (isVisible)
@@ -83,6 +89,10 @@ class MainActivity : ComponentActivity() {
                             }
                         } else {
                             updateSelection(null)
+                            thvQrValue.apply {
+                                text = "-"
+                                background = getDrawable(R.color.white)
+                            }
                         }
                     }
                 }
@@ -104,8 +114,12 @@ class MainActivity : ComponentActivity() {
                 etEmail.setText(attendantsRepo.attendants!!.getEmail(qrValue))
 
                 thvQrValue.apply {
-                    ticketHash = qrValue
-                    check()
+                    if (qrValue == TicketModel.DEBUG_RESET)
+                        text = qrValue
+                    else {
+                        ticketHash = qrValue
+                        check()
+                    }
                 }
             }
         })

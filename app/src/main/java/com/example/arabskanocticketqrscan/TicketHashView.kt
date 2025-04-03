@@ -23,6 +23,14 @@ class TicketHashView : TextView {
         return _attendantsRepo!!
     }
 
+    val dropdownEnabled: Boolean get() {
+        if (attendantsRepo.attendants == null)
+            return false
+
+        val email = attendantsRepo.attendants!!.getEmail(ticketHash)
+        return attendantsRepo.attendants!!.getByEmail(email).size > 1
+    }
+
     var ticketHash: String = ""
         set(value) {
             field = value
@@ -67,7 +75,6 @@ class TicketHashView : TextView {
     }
 
     fun displayTicket() {
-        Log.d("bindView", attendantsRepo.attendants.toString())
         if (attendantsRepo.attendants != null) {
             validateBg(R.color.white)
 
