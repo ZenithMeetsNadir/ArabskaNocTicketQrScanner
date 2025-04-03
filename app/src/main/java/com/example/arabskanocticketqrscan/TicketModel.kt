@@ -1,5 +1,6 @@
 package com.example.arabskanocticketqrscan
 
+import android.util.Log
 import com.google.gson.Gson
 
 class TicketModel {
@@ -26,6 +27,24 @@ class TicketModel {
 
             return CheckStatus.ALIEN
         }
+
+        fun scan(ticket: String): CheckStatus {
+            val attendant = attendants.find { attendant -> attendant.ticket == ticket }
+            if (attendant != null)
+                return if (attendant.valid) CheckStatus.WELCOME else CheckStatus.INTRUDER
+
+            return CheckStatus.ALIEN
+        }
+
+        fun getByEmail(email: String): List<String> {
+            return attendants
+                .filter { attendant -> attendant.email == email }
+                .map { attendant -> attendant.ticket }
+        }
+
+        fun getEmail(ticketHash: String): String {
+            return attendants.find { attendant -> attendant.ticket == ticketHash }?.ticket ?: ""
+        }
     }
 
     data class Attendant(
@@ -35,12 +54,8 @@ class TicketModel {
     )
 
     companion object : IFromJson<Attendants> {
-        val preparsed = Attendants(listOf(
-            Attendant("josifek.rak@seznam.cz", "4c5ea96f"),
-            Attendant("josifek.rak@seznam.cz", "0b88fa6a"),
-            Attendant("josifek.rak@seznam.cz", "90c4ee5d"),
-            Attendant("josifek.rak@seznam.cz", "69e62169")
-        ))
+
+        const val DEBUG_RESET = "_VELVLOUD_RESET_"
 
         private val gson = Gson()
 

@@ -1,5 +1,6 @@
 package com.example.arabskanocticketqrscan
 
+import android.util.Log
 import com.google.gson.Gson
 
 class ImedAttendantsBridge {

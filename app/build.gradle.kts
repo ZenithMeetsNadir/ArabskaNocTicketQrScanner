@@ -58,6 +58,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+    implementation("androidx.recyclerview:recyclerview:1.4.0")
+
     // camera
     implementation("androidx.camera:camera-core:1.2.0-beta01")
     implementation("androidx.camera:camera-view:1.2.0-beta01")

@@ -12,6 +12,9 @@ class LocalStorage {
             val outputFile = File(context.filesDir, destinationFileName)
             val inputStream = context.assets.open(fileName)
 
+            if (outputFile.exists() && outputFile.length() == 0L)
+                outputFile.delete()
+
             if (!outputFile.exists() || outputFile.readText() != inputStream.reader().readText()) {
                 FileOutputStream(outputFile).use { outputStream ->
                     inputStream.copyTo(outputStream)

@@ -1,55 +1,49 @@
 package com.example.arabskanocticketqrscan
 
 import android.os.Bundle
+import android.text.Editable
 import android.util.Log
+import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.arabskanocticketqrscan.databinding.ActivityMainBinding
-import java.io.File
+import androidx.core.view.isInvisible
+import androidx.core.view.isVisible
 
 class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val IS_DEBUG = true
-        private const val IMED_ATTENDANTS_JSON = "jenicek_ticketmock.json"
-        private const val ATTENDANTS_JSON = "attendants.json"
+        const val IS_DEBUG = true
     }
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var camera: Camera
-    private lateinit var attendants: TicketModel.Attendants
 
-    private fun translateImedAttendants() {
-        val imedAttendantsJson = LocalStorage.retrieveFileContent(this, IMED_ATTENDANTS_JSON)
-        val imedAttendants = ImedAttendantsBridge.parseFrom(imedAttendantsJson)
-        attendants = ImedAttendantsBridge.evolve(imedAttendants)
+    private lateinit var attendantsRepo: AttendantsRepo
 
-        val attendantsJson = TicketModel.getJson(attendants)
-        LocalStorage.saveContentString(this, ATTENDANTS_JSON, attendantsJson)
-    }
-
-    private fun retrieveAttendants() {
-        LocalStorage.copyToInternalStorage(this, IMED_ATTENDANTS_JSON, IMED_ATTENDANTS_JSON)
-        val attendantsJsonFile = File(this.filesDir, ATTENDANTS_JSON)
-
-        if (attendantsJsonFile.exists() && attendantsJsonFile.length() == 0L)
-            attendantsJsonFile.delete()
-
-        if (!attendantsJsonFile.exists())
-            translateImedAttendants()
-        else {
-            val attendantsJson = attendantsJsonFile.reader().readText()
-            attendants = TicketModel.parseFrom(attendantsJson)
+    private fun updateSelection() {
+        binding.apply {
+            val tickets = attendantsRepo.attendants!!.getByEmail(etEmail.text.toString())
+            updateSelection(if (tickets.isNotEmpty()) tickets else null)
         }
     }
 
-    private fun saveAttendants() {
-        val attendantsJson = TicketModel.getJson(attendants)
-        LocalStorage.saveContentString(this, ATTENDANTS_JSON, attendantsJson)
+    private fun updateSelection(ticketSelection: List<String>?) {
+        binding.apply {
+            val hashSelectionAdapter = (rvManualHashSelection.adapter as ManualHashSelectionAdapter)
+            hashSelectionAdapter.ticketHashes = ticketSelection
+            rvManualHashSelection.adapter = hashSelectionAdapter
+        }
     }
 
-    private fun debugResetAttendants() {
-        if (IS_DEBUG)
-            translateImedAttendants()
+    private fun flipSelectionVisibility() {
+        binding.rvManualHashSelection.apply {
+            if (isInvisible) {
+                updateSelection()
+                visibility = View.VISIBLE
+            } else if (isVisible)
+                visibility = View.INVISIBLE
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,27 +52,60 @@ class MainActivity : ComponentActivity() {
         val view = binding.root
         setContentView(view)
 
-        retrieveAttendants()
+        attendantsRepo = AttendantsRepo.getSingleton()
+        attendantsRepo.retrieveAttendants(this)
 
-        camera = Camera(this, binding.pvCamera, BarcodeAnalyzer { qrValue ->
-            val setText = { value: String, colorId: Int ->
-                binding.tvQrValue.apply {
-                    text = value
-                    background = resources.getDrawable(colorId, theme)
-                }
+        binding.rvManualHashSelection.layoutManager = LinearLayoutManager(this)
+        binding.apply {
+            btnCheck.isEnabled = false
+            btnCheck.setOnClickListener {
+                thvQrValue.check()
+                btnCheck.isEnabled = false
             }
 
-            when (qrValue) {
-                "_VELVLOUD_RESET_" -> {
-                    debugResetAttendants()
-                    setText("DEBUG RESET SUCCESSFUL", R.color.welcome)
-                }
-                else -> {
-                    when (attendants.check(qrValue)) {
-                        TicketModel.CheckStatus.WELCOME -> setText("$qrValue WELCOME", R.color.welcome)
-                        TicketModel.CheckStatus.INTRUDER -> setText("$qrValue INTRUDER", R.color.intruder)
-                        TicketModel.CheckStatus.ALIEN -> setText("$qrValue ALIEN", R.color.alien)
+            etEmail.addTextChangedListener(OnTextChanged { s, _, _, _ ->
+                val input = s.toString()
+                when (input) {
+                    TicketModel.DEBUG_RESET -> thvQrValue.text = TicketModel.DEBUG_RESET
+                    else -> {
+                        val tickets = attendantsRepo.attendants!!.getByEmail(input)
+                        if (tickets.isNotEmpty()) {
+                            if (tickets.size == 1) {
+                                thvQrValue.ticketHash = tickets[0]
+                                btnCheck.isEnabled = true
+                            } else {
+                                thvQrValue.apply {
+                                    text = "<click to select>"
+                                    background = getDrawable(R.color.white)
+                                }
+
+                                updateSelection(tickets)
+                            }
+                        } else {
+                            updateSelection(null)
+                        }
                     }
+                }
+            })
+
+            rvManualHashSelection.adapter = ManualHashSelectionAdapter { selectedTicket ->
+                thvQrValue.ticketHash = selectedTicket
+                rvManualHashSelection.visibility = View.INVISIBLE
+                btnCheck.isEnabled = true
+            }
+
+            thvQrValue.setOnClickListener {
+                flipSelectionVisibility()
+            }
+        }
+
+        camera = Camera(this, binding.pvCamera, BarcodeAnalyzer { qrValue ->
+            binding.apply {
+                etEmail.setText(attendantsRepo.attendants!!.getEmail(qrValue))
+
+                thvQrValue.apply {
+                    ticketHash = qrValue
+                    check()
                 }
             }
         })
@@ -88,12 +115,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        saveAttendants()
+        attendantsRepo.saveAttendants(this)
     }
 
     override fun onResume() {
         super.onResume()
-        retrieveAttendants()
+        attendantsRepo.retrieveAttendants(this)
     }
 
     override fun onDestroy() {
