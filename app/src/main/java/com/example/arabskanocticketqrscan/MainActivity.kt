@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
                         } else {
                             updateSelection(null)
                             thvQrValue.apply {
-                                text = "-"
+                                text = "ticket not found"
                                 background = getDrawable(R.color.white)
                             }
                         }
