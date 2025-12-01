@@ -26,6 +26,11 @@ android {
                 "proguard-rules.pro"
             )
         }
+        buildTypes {
+            create("customDebugType") {
+                isDebuggable = true
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -38,6 +43,8 @@ android {
         viewBinding = true
     }
 }
+
+val ktor_version: String by project
 
 dependencies {
 
@@ -58,6 +65,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+
     implementation("androidx.recyclerview:recyclerview:1.4.0")
 
     // camera
@@ -72,4 +81,9 @@ dependencies {
 
     // jsom
     implementation("com.google.code.gson:gson:2.8.9")
+
+    // ktor
+    implementation("io.ktor:ktor-client-core:${ktor_version}")
+    implementation("io.ktor:ktor-client-cio:${ktor_version}")
+    implementation("io.ktor:ktor-network:${ktor_version}")
 }

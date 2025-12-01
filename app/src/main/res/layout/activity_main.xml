@@ -38,12 +38,24 @@
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:textSize="20sp"
-        android:text="QR code will appear here"
+        android:text="ticket hash will appear here"
         app:layout_constraintTop_toBottomOf="@id/etEmail"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/tvDbConnection"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         android:paddingHorizontal="16dp" />
+
+    <TextView
+        android:id="@+id/tvDbConnection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="not connected"
+        android:textAlignment="center"
+        app:layout_constraintTop_toBottomOf="@+id/thvQrValue"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:layout_editor_absoluteX="61dp" />
     
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvManualHashSelection"

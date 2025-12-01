@@ -1,70 +1,39 @@
 package com.example.arabskanocticketqrscan
 
-import android.util.Log
-import com.google.gson.Gson
-
 class TicketModel {
 
     enum class CheckStatus {
         WELCOME,
         INTRUDER,
-        ALIEN
+        ALIEN,
+        ERROR,
     }
 
-    class Attendants(
-        val attendants: List<Attendant>
+    data class TicketHolder(
+        val address: String,
+        val hashes: List<String>,
+        val manual: Boolean,
+        val deleted: Boolean,
+        val seen: List<Int>,
     ) {
-        fun check(ticket: String): CheckStatus {
-            val attendant = attendants.find { attendant -> attendant.ticket == ticket }
-            if (attendant != null) {
-                if (attendant.valid) {
-                    attendant.valid = false
-                    return CheckStatus.WELCOME
-                }
-
-                return CheckStatus.INTRUDER
+        companion object : IDeserialize<TicketHolder> {
+            override fun fromJson(json: String): TicketHolder {
+                return DI.gson.fromJson(json, TicketHolder::class.java)
             }
-
-            return CheckStatus.ALIEN
         }
 
-        fun scan(ticket: String): CheckStatus {
-            val attendant = attendants.find { attendant -> attendant.ticket == ticket }
-            if (attendant != null)
-                return if (attendant.valid) CheckStatus.WELCOME else CheckStatus.INTRUDER
-
-            return CheckStatus.ALIEN
-        }
-
-        fun getByEmail(email: String): List<String> {
-            return attendants
-                .filter { attendant -> attendant.email == email }
-                .map { attendant -> attendant.ticket }
-        }
-
-        fun getEmail(ticketHash: String): String {
-            return attendants.find { attendant -> attendant.ticket == ticketHash }?.email ?: ""
+        fun seen(ticket: String): Boolean {
+            return seen.contains(hashes.indexOf(ticket))
         }
     }
 
-    data class Attendant(
-        val email: String,
-        val ticket: String,
-        var valid: Boolean = true,
-    )
-
-    companion object : IFromJson<Attendants> {
-
-        const val DEBUG_RESET = "_VELVLOUD_RESET_"
-
-        private val gson = Gson()
-
-        override fun parseFrom(json: String): Attendants {
-            return gson.fromJson(json, Attendants::class.java)
-        }
-
-        override fun getJson(obj: Attendants): String {
-            return gson.toJson(obj)
+    data class GetByEmailResult(
+        val records: List<TicketHolder>
+    ) {
+        companion object : IDeserialize<GetByEmailResult> {
+            override fun fromJson(json: String): GetByEmailResult {
+                return DI.gson.fromJson(json, GetByEmailResult::class.java)
+            }
         }
     }
 }

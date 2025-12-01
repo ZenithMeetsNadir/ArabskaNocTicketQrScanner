@@ -9,6 +9,14 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.arabskanocticketqrscan.databinding.ActivityMainBinding
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
+import io.ktor.client.*
+import io.ktor.client.engine.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
 
 class MainActivity : ComponentActivity() {
 
@@ -16,29 +24,29 @@ class MainActivity : ComponentActivity() {
         const val IS_DEBUG = true
     }
 
+    private val overrideJobManager = OverrideJobManager()
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var camera: Camera
 
-    private lateinit var attendantsRepo: AttendantsRepo
-
     private val dropdownEnabled: Boolean get() {
         binding.apply {
-            return attendantsRepo.attendants!!.getByEmail(etEmail.text.toString()).size > 1 || thvQrValue.dropdownEnabled
+            return AttendantsRepo.getByEmail(etEmail.text.toString()).size > 1 || thvQrValue.dropdownEnabled
         }
     }
 
     private fun updateSelection() {
         binding.apply {
-            val tickets = attendantsRepo.attendants!!.getByEmail(etEmail.text.toString())
-            updateSelection(if (tickets.isNotEmpty()) tickets else null)
+            val tickets = AttendantsRepo.getByEmail(etEmail.text.toString())
+            updateSelection(tickets.ifEmpty { null })
         }
     }
 
     private fun updateSelection(ticketSelection: List<String>?) {
         binding.apply {
-            val hashSelectionAdapter = (rvManualHashSelection.adapter as ManualHashSelectionAdapter)
+            val hashSelectionAdapter = rvManualHashSelection.adapter as ManualHashSelectionAdapter
             hashSelectionAdapter.ticketHashes = ticketSelection
-            rvManualHashSelection.adapter = hashSelectionAdapter
+            //hashSelectionAdapter.notifyDataSetChanged()
         }
     }
 
@@ -58,44 +66,52 @@ class MainActivity : ComponentActivity() {
         val view = binding.root
         setContentView(view)
 
-        attendantsRepo = AttendantsRepo.getSingleton()
-        attendantsRepo.retrieveAttendants(this)
-
         binding.rvManualHashSelection.layoutManager = LinearLayoutManager(this)
         binding.apply {
+            tvDbConnection.text = "scanning lan for db..."
+            AttendantsRepo.onErrorAction = { msg ->
+                tvDbConnection.text = msg
+            }
+
+            val job = CoroutineScope(Dispatchers.Default).launch {
+                AttendantsRepo.getDbUrlTryLan { lanFound ->
+                    tvDbConnection.text = (if (lanFound) "lan" else "fallback") + " db: ${AttendantsRepo.url!!}"
+                }
+            }
+
             btnCheck.isEnabled = false
             btnCheck.setOnClickListener {
                 thvQrValue.check()
                 btnCheck.isEnabled = false
             }
 
-            etEmail.addTextChangedListener(OnTextChanged { s, _, _, _ ->
+            etEmail.addTextChangedListener(OnTextChanged { s ->
                 val input = s.toString()
-                when (input) {
-                    TicketModel.DEBUG_RESET -> thvQrValue.text = TicketModel.DEBUG_RESET
-                    else -> {
-                        val tickets = attendantsRepo.attendants!!.getByEmail(input)
-                        if (tickets.isNotEmpty()) {
-                            if (tickets.size == 1) {
-                                thvQrValue.ticketHash = tickets[0]
-                                btnCheck.isEnabled = true
-                            } else {
-                                thvQrValue.apply {
-                                    text = "<click to select>"
-                                    background = getDrawable(R.color.white)
-                                }
-
-                                updateSelection(tickets)
-                            }
+                overrideJobManager.launchInstead({ AttendantsRepo.getByEmailSus(input) }, { tickets ->
+                    if (tickets.isNotEmpty()) {
+                        if (tickets.size == 1) {
+                            thvQrValue.ticketHash = tickets[0]
+                            btnCheck.isEnabled = true
                         } else {
-                            updateSelection(null)
                             thvQrValue.apply {
-                                text = "ticket not found"
+                                text = "<click to select>"
                                 background = getDrawable(R.color.white)
                             }
+
+                            updateSelection(tickets)
+                        }
+                    } else {
+                        updateSelection(null)
+                        thvQrValue.apply {
+                            text = "ticket not found"
+                            background = getDrawable(R.color.white)
                         }
                     }
-                }
+
+                    withContext(Dispatchers.Main) {
+                        rvManualHashSelection.adapter?.notifyDataSetChanged()
+                    }
+                })
             })
 
             rvManualHashSelection.adapter = ManualHashSelectionAdapter { selectedTicket ->
@@ -111,15 +127,11 @@ class MainActivity : ComponentActivity() {
 
         camera = Camera(this, binding.pvCamera, BarcodeAnalyzer { qrValue ->
             binding.apply {
-                etEmail.setText(attendantsRepo.attendants!!.getEmail(qrValue))
+                etEmail.setText(AttendantsRepo.getEmail(qrValue))
 
                 thvQrValue.apply {
-                    if (qrValue == TicketModel.DEBUG_RESET)
-                        text = qrValue
-                    else {
-                        ticketHash = qrValue
-                        check()
-                    }
+                    ticketHash = qrValue
+                    check()
                 }
             }
         })
@@ -129,12 +141,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        attendantsRepo.saveAttendants(this)
     }
 
     override fun onResume() {
         super.onResume()
-        attendantsRepo.retrieveAttendants(this)
     }
 
     override fun onDestroy() {

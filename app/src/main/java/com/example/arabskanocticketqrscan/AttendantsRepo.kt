@@ -1,58 +1,166 @@
 package com.example.arabskanocticketqrscan
 
 import android.content.Context
+import android.util.Log
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.delete
+import io.ktor.client.request.get
+import io.ktor.client.request.patch
+import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import java.io.File
+import java.net.ConnectException
+import java.net.URLEncoder
 
-class AttendantsRepo() {
+object AttendantsRepo {
 
-    companion object {
-        protected var instance: AttendantsRepo? = null
+    private val brdcPort = 6769
+    private val defaultUrl = "http://jenyyk.duckdns.org:6767"
 
-        fun getSingleton(): AttendantsRepo {
-            if (instance == null)
-                instance = AttendantsRepo()
+    @Volatile
+    var url: String? = null
+    @Volatile
+    private var searching = false
 
-            return instance!!
+    private val httpClient: HttpClient = HttpClient(CIO)
+
+    var onErrorAction: ((msg: String) -> Unit)? = null
+
+    suspend fun getDbUrlTryLan(onUrlFetched: (lanFound: Boolean) -> Unit = {}): String {
+        if (url == null) {
+            if (!searching) {
+                searching = true
+
+                val listener = LanBrdcListener(brdcPort)
+                var lanFound = false
+                url = try {
+                    listener.listenForDbBrdcTimeout(3000L).let {
+                        val tempUrl = "${it.serverAddr}:${it.port}"
+                        lanFound = true
+                        tempUrl
+                    }
+                } catch (_: TimeoutCancellationException) {
+                    defaultUrl
+                }
+
+                onUrlFetched(lanFound)
+            } else {
+                while (url == null)
+                    delay(500L)
+            }
         }
 
-        private const val IMED_ATTENDANTS_JSON = "jenicek_ticketmock.json"
-        private const val ATTENDANTS_JSON = "attendants.json"
+        return url!!
     }
 
-    var attendants: TicketModel.Attendants? = null
+    fun check(ticket: String): TicketModel.CheckStatus {
+        val resp = try {
+            runBlocking {
+                val url = "${ getDbUrlTryLan() }/ticket/$ticket"
+                httpClient.patch(url)
+            }
+        } catch (e: Exception) {
+            onErrorAction?.invoke("request error: ${e.message}")
+            return TicketModel.CheckStatus.ERROR
+        }
 
-    fun translateImedAttendants(context: Context) {
-        val imedAttendantsJson = LocalStorage.retrieveFileContent(context, IMED_ATTENDANTS_JSON)
-        val imedAttendants = ImedAttendantsBridge.parseFrom(imedAttendantsJson)
-        attendants = ImedAttendantsBridge.evolve(imedAttendants)
-
-        saveAttendants(context)
-    }
-
-    fun retrieveAttendants(context: Context) {
-        LocalStorage.copyToInternalStorage(context, IMED_ATTENDANTS_JSON, IMED_ATTENDANTS_JSON)
-        val attendantsJsonFile = File(context.filesDir, ATTENDANTS_JSON)
-
-        if (attendantsJsonFile.exists() && attendantsJsonFile.length() == 0L)
-            attendantsJsonFile.delete()
-
-        if (!attendantsJsonFile.exists())
-            translateImedAttendants(context)
-        else {
-            val attendantsJson = attendantsJsonFile.reader().readText()
-            attendants = TicketModel.parseFrom(attendantsJson)
+        return when (resp.status.value) {
+            200 -> TicketModel.CheckStatus.WELCOME
+            404 -> TicketModel.CheckStatus.ALIEN
+            409 -> TicketModel.CheckStatus.INTRUDER
+            else -> TicketModel.CheckStatus.ALIEN
         }
     }
 
-    fun saveAttendants(context: Context) {
-        if (attendants != null) {
-            val attendantsJson = TicketModel.getJson(attendants!!)
-            LocalStorage.saveContentString(context, ATTENDANTS_JSON, attendantsJson)
+    fun uncheck(ticket: String) {
+        try {
+            runBlocking {
+                val url = "${getDbUrlTryLan()}/ticket/$ticket"
+                httpClient.delete(url)
+            }
+        } catch (e: ConnectException) {
+            onErrorAction?.invoke("request error: ${e.message}")
         }
     }
 
-    fun debugResetAttendants(context: Context) {
-        if (MainActivity.IS_DEBUG)
-            translateImedAttendants(context)
+    fun scan(ticket: String): TicketModel.CheckStatus {
+        val resp = try {
+            runBlocking {
+             val url = "${ getDbUrlTryLan() }/ticket/$ticket"
+             httpClient.get(url)
+            }
+        } catch (e: Exception) {
+            onErrorAction?.invoke("request error: ${e.message}")
+            return TicketModel.CheckStatus.ERROR
+        }
+
+        return when (resp.status.value) {
+            200 -> {
+                val json = runBlocking { resp.bodyAsText() }
+                val holder = TicketModel.TicketHolder.fromJson(json)
+                if (holder.seen(ticket))
+                    TicketModel.CheckStatus.INTRUDER
+                else
+                    TicketModel.CheckStatus.WELCOME
+            }
+            else -> TicketModel.CheckStatus.ALIEN
+        }
+    }
+
+    fun getEmail(ticket: String): String {
+        val resp = try {
+            runBlocking {
+                val url = "${ getDbUrlTryLan() }/ticket/$ticket"
+                httpClient.get(url)
+            }
+        } catch (e: Exception) {
+            onErrorAction?.invoke("request error: ${e.message}")
+            return "error"
+        }
+
+        if (resp.status.value == 200) {
+            val json = runBlocking { resp.bodyAsText() }
+            val holder = TicketModel.TicketHolder.fromJson(json)
+            return holder.address
+        }
+
+        return "email not found"
+    }
+
+    fun getByEmail(email: String): List<String> {
+        return runBlocking { getByEmailSus(email) }
+    }
+
+    suspend fun getByEmailSus(email: String): List<String> {
+        val emailEnc = URLEncoder.encode(email, "UTF-8")
+
+        val resp = try {
+            val url = " ${ getDbUrlTryLan() }/email/$emailEnc"
+            httpClient.get(url)
+        } catch (e: Exception) {
+            onErrorAction?.invoke("request error: ${e.message}")
+            return listOf()
+        }
+
+        if (resp.status.value == 200) {
+            var json = resp.bodyAsText()
+            if (!(json.isNotEmpty() && json.first() == '{' && json.last() == '}'))
+                json = "{records:$json}"
+
+            Log.d("respJson", json)
+
+            val resArr = ArrayList<String>()
+            TicketModel.GetByEmailResult.fromJson(json).records.forEach { it ->
+                resArr.addAll(it.hashes)
+            }
+
+            return resArr
+        }
+
+        return listOf()
     }
 }

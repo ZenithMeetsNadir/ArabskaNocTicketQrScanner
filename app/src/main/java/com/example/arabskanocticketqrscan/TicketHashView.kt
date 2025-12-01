@@ -11,24 +11,15 @@ import kotlin.toString
 
 class TicketHashView : TextView {
 
+    var checkStatusCache: TicketModel.CheckStatus? = null
+
     init {
         background = ContextCompat.getDrawable(context, R.color.white)
     }
 
-    private var _attendantsRepo: AttendantsRepo? = null
-    protected val attendantsRepo: AttendantsRepo get() {
-        if (_attendantsRepo == null)
-            _attendantsRepo = AttendantsRepo.getSingleton()
-
-        return _attendantsRepo!!
-    }
-
     val dropdownEnabled: Boolean get() {
-        if (attendantsRepo.attendants == null)
-            return false
-
-        val email = attendantsRepo.attendants!!.getEmail(ticketHash)
-        return attendantsRepo.attendants!!.getByEmail(email).size > 1
+        val email = AttendantsRepo.getEmail(ticketHash)
+        return AttendantsRepo.getByEmail(email).size > 1
     }
 
     var ticketHash: String = ""
@@ -40,16 +31,18 @@ class TicketHashView : TextView {
     constructor(context: Context) : super(context)
     constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
 
-    fun check() {
-        if (attendantsRepo.attendants != null) {
-            val checkStatus = attendantsRepo.attendants!!.check(ticketHash)
-            if (checkStatus == TicketModel.CheckStatus.WELCOME) {
-                text = "$text WELCOME"
-                displayToastMessage(checkStatus)
-            }
+    fun consumeCheckStatusCache(): TicketModel.CheckStatus? {
+        val status = checkStatusCache
+        checkStatusCache = null
+        return status
+    }
 
-            validateBg(R.color.welcome, checkStatus)
-        }
+    fun check() {
+        val checkStatus = AttendantsRepo.check(ticketHash)
+
+        //checkStatusCache = checkStatus
+        displayToastMessage(checkStatus)
+        validateBg(R.color.welcome, checkStatus)
     }
 
     private fun displayToastMessage(checkStatus: TicketModel.CheckStatus) {
@@ -57,50 +50,34 @@ class TicketHashView : TextView {
             TicketModel.CheckStatus.WELCOME -> "WELCOME"
             TicketModel.CheckStatus.INTRUDER -> "Ticket has already been checked"
             TicketModel.CheckStatus.ALIEN -> "Ticket is invalid"
+            TicketModel.CheckStatus.ERROR -> "An error occurred while checking ticket"
         }, Toast.LENGTH_LONG).show()
     }
 
     private fun validateBg(welcomeColorId: Int, checkStatus: TicketModel.CheckStatus? = null) {
-        if (attendantsRepo.attendants != null) {
-            var mutCheckStatus = checkStatus
-            if (mutCheckStatus == null)
-                mutCheckStatus = attendantsRepo.attendants!!.scan(ticketHash)
+        var mutCheckStatus = checkStatus
+        if (mutCheckStatus == null)
+            mutCheckStatus = AttendantsRepo.scan(ticketHash)
 
-            background = ContextCompat.getDrawable(context, when (mutCheckStatus) {
-                TicketModel.CheckStatus.WELCOME -> welcomeColorId
-                TicketModel.CheckStatus.INTRUDER -> R.color.intruder
-                TicketModel.CheckStatus.ALIEN -> R.color.alien
-            })
-        }
+        background = ContextCompat.getDrawable(context, when (mutCheckStatus) {
+            TicketModel.CheckStatus.WELCOME -> welcomeColorId
+            TicketModel.CheckStatus.INTRUDER -> R.color.intruder
+            TicketModel.CheckStatus.ALIEN -> R.color.alien
+            TicketModel.CheckStatus.ERROR -> R.color.alien
+        })
     }
 
     fun displayTicket() {
-        if (attendantsRepo.attendants != null) {
-            validateBg(R.color.white)
+        validateBg(R.color.white)
+        var checkStatus = consumeCheckStatusCache()
+        if (checkStatus == null)
+            checkStatus = AttendantsRepo.scan(ticketHash)
 
-            text = when (attendantsRepo.attendants!!.scan(ticketHash)) {
-                TicketModel.CheckStatus.WELCOME -> ticketHash
-                TicketModel.CheckStatus.INTRUDER -> "$ticketHash INTRUDER"
-                TicketModel.CheckStatus.ALIEN -> "$ticketHash ALIEN"
-            }
-        }
-    }
-
-    override fun setText(text: CharSequence?, type: BufferType?) {
-        if (attendantsRepo.attendants == null) {
-            super.setText(text, type)
-            return
-        }
-
-        when (text.toString()) {
-            TicketModel.DEBUG_RESET -> {
-                attendantsRepo.debugResetAttendants(context)
-                super.setText("DEBUG RESET SUCCESSFUL", type)
-                background = ContextCompat.getDrawable(context, R.color.welcome)
-            }
-            else -> {
-                super.setText(text, type)
-            }
+        text = "$ticketHash " + when (checkStatus) {
+            TicketModel.CheckStatus.WELCOME -> "WELCOME"
+            TicketModel.CheckStatus.INTRUDER -> "INTRUDER"
+            TicketModel.CheckStatus.ALIEN -> "ALIEN"
+            TicketModel.CheckStatus.ERROR -> "ERROR"
         }
     }
 }
