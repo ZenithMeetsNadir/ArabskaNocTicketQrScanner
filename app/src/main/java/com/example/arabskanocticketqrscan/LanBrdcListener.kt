@@ -1,9 +1,12 @@
 package com.example.arabskanocticketqrscan
 
+import android.util.Log
 import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.BoundDatagramSocket
+import io.ktor.network.sockets.Socket
 import io.ktor.network.sockets.SocketAddress
 import io.ktor.network.sockets.aSocket
+import io.ktor.utils.io.readText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.time.withTimeout
@@ -26,13 +29,20 @@ class LanBrdcListener {
         val port: Int,
     )
 
+    fun close() {
+        serverSock.close()
+    }
+
     suspend fun listenForDbBrdc(): DbServer {
         while (true) {
             val datagram = serverSock.receive()
             try {
-                val port = datagram.packet.toString().toInt()
+                val port = datagram.packet.readText().toInt()
                 return DbServer(datagram.address, port)
-            } catch (_: NumberFormatException) {}
+            } catch (e: Exception) {
+                val msg = if (e.message != null) e.message!! else ""
+                Log.e("brdcast", msg)
+            }
         }
     }
 

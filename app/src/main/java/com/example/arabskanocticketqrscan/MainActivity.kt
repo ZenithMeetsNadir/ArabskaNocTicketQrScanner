@@ -1,62 +1,114 @@
 package com.example.arabskanocticketqrscan
 
+import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.text.Editable
 import android.util.Log
-import android.view.View
+import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import com.example.arabskanocticketqrscan.databinding.ActivityMainBinding
-import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
-import io.ktor.client.*
-import io.ktor.client.engine.*
+import com.example.arabskanocticketqrscan.databinding.ActivityMainBinding
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.CoroutineContext
 
 class MainActivity : ComponentActivity() {
 
-    companion object {
-        const val IS_DEBUG = true
-    }
-
-    private val overrideJobManager = OverrideJobManager()
-
     private lateinit var binding: ActivityMainBinding
     private lateinit var camera: Camera
+    private lateinit var multicastLock: WifiManager.MulticastLock
 
-    private val dropdownEnabled: Boolean get() {
-        binding.apply {
-            return AttendantsRepo.getByEmail(etEmail.text.toString()).size > 1 || thvQrValue.dropdownEnabled
+    private suspend fun onRequestSuccess(checkStatus: TicketModel.CheckStatus, isCheck: Boolean) {
+        withContext(Dispatchers.Main) {
+            binding.apply {
+                thvQrValue.checkStatus = checkStatus
+                thvQrValue.displayTicket()
+            }
+
+            showStatus(checkStatus, isCheck)
         }
     }
 
-    private fun updateSelection() {
+    private fun launchCheck(ticketHash: String) {
         binding.apply {
-            val tickets = AttendantsRepo.getByEmail(etEmail.text.toString())
-            updateSelection(tickets.ifEmpty { null })
+            thvQrValue.ticketHash = ticketHash
+            thvQrValue.checkStatus = TicketModel.CheckStatus.PENDING
+            thvQrValue.displayTicket()
+        }
+
+        if (AttendantsRepo.tryLaunchCheckTimeout(ticketHash) { checkStatus, isCheck -> onRequestSuccess(checkStatus, isCheck) })
+            showPending()
+        else
+            Toast.makeText(this, "request pending", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun launchUncheck(ticketHash: String) {
+        binding.apply {
+            thvQrValue.ticketHash = ticketHash
+            thvQrValue.checkStatus = TicketModel.CheckStatus.PENDING
+            thvQrValue.displayTicket()
+        }
+
+        if (AttendantsRepo.tryLaunchUncheckTimeout(ticketHash) { checkStatus, isCheck -> onRequestSuccess(checkStatus, isCheck) })
+            showPending()
+        else
+            Toast.makeText(this, "request pending", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showPending() {
+        binding.apply {
+            ivStatus.isVisible = false
+            tvStatusMgs.isVisible = false
+            tvConnecting.isVisible = true
         }
     }
 
-    private fun updateSelection(ticketSelection: List<String>?) {
+    private var hideStatusJob: Job? = null
+
+    private fun showStatus(checkStatus: TicketModel.CheckStatus, isCheck: Boolean) {
         binding.apply {
-            val hashSelectionAdapter = rvManualHashSelection.adapter as ManualHashSelectionAdapter
-            hashSelectionAdapter.ticketHashes = ticketSelection
-            //hashSelectionAdapter.notifyDataSetChanged()
+            tvConnecting.isVisible = false
+
+            if (isCheck) {
+                ivStatus.setImageDrawable(getDrawable(if (checkStatus == TicketModel.CheckStatus.WELCOME) R.drawable.success else R.drawable.error))
+                ivStatus.isVisible = true
+
+                tvStatusMgs.text = when (checkStatus) {
+                    TicketModel.CheckStatus.WELCOME -> "Vítejte"
+                    TicketModel.CheckStatus.INTRUDER -> "Lístek opakovaně naskenován"
+                    TicketModel.CheckStatus.ALIEN -> "Lístek neexistuje"
+                    else -> "Nastala chyba"
+                }
+                tvStatusMgs.isVisible = true
+
+                if (hideStatusJob != null && !hideStatusJob!!.isCompleted)
+                    hideStatusJob!!.cancel()
+
+                hideStatusJob = CoroutineScope(Dispatchers.Default).launch {
+                    try {
+                        delay(5000)
+                        withContext(Dispatchers.Main) {
+                            ivStatus.isVisible = false
+                            tvStatusMgs.isVisible = false
+                        }
+                    } catch (_: CancellationException) { }
+                }
+            }
         }
     }
 
-    private fun flipSelectionVisibility() {
-        binding.rvManualHashSelection.apply {
-            if (isInvisible && dropdownEnabled) {
-                updateSelection()
-                visibility = View.VISIBLE
-            } else if (isVisible)
-                visibility = View.INVISIBLE
+    private fun connectToDb() {
+        AttendantsRepo.url = null
+
+        binding.tvDbConnection.text = "scanning lan for db..."
+
+        CoroutineScope(Dispatchers.IO).launch {
+            AttendantsRepo.getDbUrlTryLan { lanFound ->
+                binding.tvDbConnection.text = (if (lanFound) "lan" else "fallback") + " db: ${AttendantsRepo.url!!}"
+            }
         }
     }
 
@@ -66,89 +118,50 @@ class MainActivity : ComponentActivity() {
         val view = binding.root
         setContentView(view)
 
-        binding.rvManualHashSelection.layoutManager = LinearLayoutManager(this)
-        binding.apply {
-            tvDbConnection.text = "scanning lan for db..."
-            AttendantsRepo.onErrorAction = { msg ->
-                tvDbConnection.text = msg
-            }
+        val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+        multicastLock = wifi.createMulticastLock("udp-broadcast-lock")
+        multicastLock.setReferenceCounted(true)
+        multicastLock.acquire()
 
-            val job = CoroutineScope(Dispatchers.Default).launch {
-                AttendantsRepo.getDbUrlTryLan { lanFound ->
-                    tvDbConnection.text = (if (lanFound) "lan" else "fallback") + " db: ${AttendantsRepo.url!!}"
-                }
-            }
-
-            btnCheck.isEnabled = false
-            btnCheck.setOnClickListener {
-                thvQrValue.check()
-                btnCheck.isEnabled = false
-            }
-
-            etEmail.addTextChangedListener(OnTextChanged { s ->
-                val input = s.toString()
-                overrideJobManager.launchInstead({ AttendantsRepo.getByEmailSus(input) }, { tickets ->
-                    if (tickets.isNotEmpty()) {
-                        if (tickets.size == 1) {
-                            thvQrValue.ticketHash = tickets[0]
-                            btnCheck.isEnabled = true
-                        } else {
-                            thvQrValue.apply {
-                                text = "<click to select>"
-                                background = getDrawable(R.color.white)
-                            }
-
-                            updateSelection(tickets)
-                        }
-                    } else {
-                        updateSelection(null)
-                        thvQrValue.apply {
-                            text = "ticket not found"
-                            background = getDrawable(R.color.white)
-                        }
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        rvManualHashSelection.adapter?.notifyDataSetChanged()
-                    }
-                })
-            })
-
-            rvManualHashSelection.adapter = ManualHashSelectionAdapter { selectedTicket ->
-                thvQrValue.ticketHash = selectedTicket
-                rvManualHashSelection.visibility = View.INVISIBLE
-                btnCheck.isEnabled = true
-            }
-
-            thvQrValue.setOnClickListener {
-                flipSelectionVisibility()
-            }
+        AttendantsRepo.onErrorAction = { msg ->
+            Log.e("attendantsRepoError", msg)
+            binding.tvDbConnection.text = msg
         }
 
-        camera = Camera(this, binding.pvCamera, BarcodeAnalyzer { qrValue ->
-            binding.apply {
-                etEmail.setText(AttendantsRepo.getEmail(qrValue))
+        binding.tvDbConnection.setOnClickListener {
+            connectToDb()
+        }
 
-                thvQrValue.apply {
-                    ticketHash = qrValue
-                    check()
-                }
-            }
+        connectToDb()
+
+        camera = Camera(this, binding.pvCamera, BarcodeAnalyzer { qrValue ->
+            launchCheck(qrValue)
         })
+
+        binding.btnRecheck.setOnClickListener {
+            launchCheck(binding.thvQrValue.ticketHash)
+        }
+
+        binding.btnUncheck.setOnClickListener {
+            launchUncheck(binding.thvQrValue.ticketHash)
+        }
 
         camera.startCamera()
     }
 
     override fun onPause() {
         super.onPause()
+        camera.stopCamera()
     }
 
     override fun onResume() {
         super.onResume()
+        camera.startCamera()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         camera.stopCamera()
+        multicastLock.release()
     }
 }

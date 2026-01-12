@@ -6,6 +6,7 @@ class TicketModel {
         WELCOME,
         INTRUDER,
         ALIEN,
+        PENDING,
         ERROR,
     }
 
