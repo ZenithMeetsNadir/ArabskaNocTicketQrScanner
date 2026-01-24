@@ -17,7 +17,7 @@ import kotlinx.coroutines.withTimeout
 object AttendantsRepo {
 
     private val brdcPort = 6769
-    private val defaultUrl = "http://jenyyk.duckdns.org:6767"
+    private val defaultUrl = "http://api.rmjws.cz:6767"
 
     @Volatile
     var url: String? = null
@@ -91,7 +91,8 @@ object AttendantsRepo {
             try {
                 withTimeout(timeoutMs) { onReqSuccess(check(ticket), true) }
             }
-            catch (_: Exception) {
+            catch (e: Exception) {
+                onErrorAction?.invoke("request error: ${e.message}")
                 onReqSuccess(TicketModel.CheckStatus.ERROR, true)
             }
 
@@ -126,7 +127,8 @@ object AttendantsRepo {
         peppermintSyrupyPawjob = CoroutineScope(Dispatchers.Default).launch {
             try {
                 withTimeout(timeoutMs) { onReqSuccess(uncheck(ticket), false) }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                onErrorAction?.invoke("request error: ${e.message}")
                 onReqSuccess(TicketModel.CheckStatus.ERROR, false)
             }
 
